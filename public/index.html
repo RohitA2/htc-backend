@@ -1,0 +1,150 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Group Chat</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #chat-box { width: 50%; margin: auto; border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
+        #message-box { width: 50%; padding: 10px; }
+        input { margin: 10px; }
+        button { padding: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>Group Chat</h2>
+
+    <input id="userId" type="text" placeholder="Enter Your User ID" />
+    <input id="groupId" type="text" placeholder="Enter Group ID" />
+    <button onclick="joinChat()">Join</button>
+
+    <div id="chat-box"></div>
+    <input id="message-box" type="text" placeholder="Type a message" onkeypress="sendMessage(event)" />
+
+    <script>
+        const socket = io();
+        let userId = "";
+        let groupId = "";
+
+        // Function to join the chat with userId and groupId
+        function joinChat() {
+            userId = document.getElementById("userId").value.trim();
+            groupId = document.getElementById("groupId").value.trim();
+
+            if (userId && groupId) {
+                socket.emit("join-group", { userId, groupId });
+                document.getElementById("userId").disabled = true;
+                document.getElementById("groupId").disabled = true;
+            }
+        }
+
+        // Listen for messages from the server
+        socket.on("message", (data) => {
+            const chatBox = document.getElementById("chat-box");
+            chatBox.innerHTML += `<p><strong>${data.user}:</strong> ${data.text}</p>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        // Function to send a message when "Enter" is pressed
+        function sendMessage(event) {
+            if (event.key === "Enter") {
+                let message = document.getElementById("message-box").value;
+                if (message.trim() !== "") {
+                    socket.emit("message", { groupId, message });
+                    document.getElementById("message-box").value = "";
+                }
+            }
+        }
+    </script>
+
+</body>
+</html> -->
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Group Chat</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #chat-box { width: 50%; margin: auto; border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
+        #message-box { width: 50%; padding: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>Group Chat</h2>
+    <input id="userId" type="text" placeholder="Enter User ID" />
+    <input id="groupId" type="text" placeholder="Enter Group ID" />
+    <button onclick="joinChat()">Join</button>
+
+    <div id="chat-box"></div>
+    <input id="message-box" type="text" placeholder="Type a message" onkeypress="sendMessage(event)" />
+
+    <script>
+        const socket = io("http://localhost:3000"); // Backend URL
+        let userId = "";
+        let groupId = "";
+
+        function joinChat() {
+            userId = document.getElementById("userId").value.trim();
+            groupId = document.getElementById("groupId").value.trim();
+            if (userId && groupId) {
+                socket.emit("join-group", { userId, groupId });
+                document.getElementById("userId").disabled = true;
+                document.getElementById("groupId").disabled = true;
+            }
+        }
+
+        socket.on("receive_message", (data) => {
+            displayMessage(data.senderId, data.message);
+        });
+
+        function displayMessage(sender, message) {
+            const chatBox = document.getElementById("chat-box");
+            chatBox.innerHTML += `<p><strong>${sender}:</strong> ${message}</p>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function sendMessage(event) {
+            if (event.key === "Enter") {
+                let message = document.getElementById("message-box").value;
+                if (message.trim() !== "") {
+                    document.getElementById("message-box").value = "";
+
+                    try {
+                        let response = await fetch("http://localhost:3000/api/send-message", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                message: message,
+                                groupId: groupId,
+                                messageType: "text"
+                            })
+                        });
+
+                        let result = await response.json();
+                        if (response.ok) {
+                            console.log("Message sent:", result);
+                        } else {
+                            console.error("Error:", result);
+                        }
+                    } catch (error) {
+                        console.error("Failed to send message:", error);
+                    }
+                }
+            }
+        }
+    </script>
+
+</body>
+</html>
+
