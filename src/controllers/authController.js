@@ -9,8 +9,7 @@ const otpService = require("../services/otpServices");
 const moment = require("moment-timezone");
 const { use } = require("../routes/uploadRoutes");
 const myServices = require("../services/myServices");
-const Tags = require("../models/Tags");
-const lifeStyle = require("../models/lifeStyle");
+
 
 dotenv.config();
 
@@ -41,10 +40,10 @@ exports.register = async (req, res) => {
 
       return res.status(400).json({ message: "Email already exists" });
     }
-    // const saltRounds = 10;
-    // const hashedPassword = await bcrypt.hash(userData.password, saltRounds);
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(userData.password, saltRounds);
 
-    // userData.password = hashedPassword;
+    userData.password = hashedPassword;
 
     const newUser = await userService.create(db.models.User, userData);
 
@@ -126,6 +125,7 @@ exports.login = async (req, res) => {
       message: "Login successful",
       token,
       userId: user.data.id,
+      user: user.data,
     });
   } catch (error) {
     console.error(error);
@@ -460,111 +460,4 @@ exports.updateUser = async (req, res) => {
   }
 };
 
-// Create API for lifeStyle and Tags
-exports.moreDetails = async (req, res) => {
-  try {
-    const data = req.body;
-
-    if (!data || Object.keys(data).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Data is required.",
-      });
-    }
-
-    // Add the userId from the token into the data
-    const { id: userId } = req.user;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized: userId not found.",
-      });
-    }
-
-    // Check if data contains title and description, create in Tags model
-    if (data.title && data.description) {
-      const tagData = {
-        title: data.title,
-        description: data.description,
-        userId, // Use the userId from the token
-      };
-
-      const response = await myServices.create(db.models.Tags, tagData);
-      console.log("Response from create:", response);
-      if (!response.success) {
-        return res.status(500).json({
-          success: false,
-          message: "Failed to create Tag.",
-          error: response.message || response.error,
-        });
-      }
-
-      return res.status(201).json({
-        success: true,
-        message: "Tag created successfully.",
-        data: response.data,
-      });
-    }
-    // Otherwise, create in lifeStyle model
-    const allowedFields = [
-      "title",
-      "category",
-      "description",
-      "occupation",
-      "personality_traits",
-      "preferred_age",
-      "preferred_height",
-      "body_type",
-      "location",
-      "education",
-      "income_source",
-      "industry",
-      "religious_believe",
-      "cultural_background",
-      "languages_spoken",
-      "love_languages",
-      "pet_preference",
-      "relationship_experience",
-      "children",
-      "astrological_sign",
-    ];
-
-    const validData = {};
-    for (const field of allowedFields) {
-      if (data[field] !== undefined) {
-        validData[field] = data[field];
-      }
-    }
-    if (Object.keys(validData).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No valid fields provided to create a record.",
-      });
-    }
-    validData.userId = userId; // Include userId for lifeStyle records
-
-    const response = await myServices.create(db.models.lifeStyle, validData);
-
-    if (!response.success) {
-      return res.status(500).json({
-        success: false,
-        message: "Failed to create lifeStyle record.",
-        error: response.message || response.error,
-      });
-    }
-
-    return res.status(201).json({
-      success: true,
-      message: "Record created successfully.",
-      data: response.data,
-    });
-  } catch (error) {
-    console.error("Error creating record:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Internal Server Error",
-    });
-  }
-};
 

@@ -5,60 +5,91 @@ const fs = require("fs");
 
 const router = express.Router();
 
-// Set root directory
-const rootDir = path.resolve(__dirname, ".."); // Moves to project root
+// Project root
+const rootDir = path.resolve(__dirname, "..");
 
-// Multer Storage Setup
+// Allowed file types
+const allowedMimeTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/jpg",
+  "application/pdf",
+  "video/mp4"
+];
+
+// Multer Storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const folderName = req.params.folderName; // Get folderName from URL param
+    let folderName = req.params.folderName;
+
     if (!folderName) {
-      return cb(new Error("Folder name is required."));
+      return cb(new Error("Folder name is required"));
     }
 
-    // Create folder dynamically if not exists
-    const uploadFolder = path.join(rootDir, "uploads", folderName);
-    fs.mkdirSync(uploadFolder, { recursive: true }); // Ensure folder exists
-    cb(null, uploadFolder);
+    // 🔐 Sanitize folder name
+    folderName = folderName.replace(/[^a-zA-Z0-9_-]/g, "");
+
+    const uploadPath = path.join(rootDir, "uploads", folderName);
+
+    fs.mkdirSync(uploadPath, { recursive: true });
+
+    cb(null, uploadPath);
   },
+
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + "-" + file.originalname);
+    const uniqueName =
+      Date.now() + "-" + Math.round(Math.random() * 1e9);
+
+    cb(null, `${uniqueName}${path.extname(file.originalname)}`);
   },
 });
 
-const upload = multer({ storage });
+// File filter
+const fileFilter = (req, file, cb) => {
+  if (!allowedMimeTypes.includes(file.mimetype)) {
+    return cb(new Error("Invalid file type"), false);
+  }
+  cb(null, true);
+};
 
-// Upload Route
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MB
+  },
+});
+
+// Upload API
 router.post(
   "/media/:folderName",
-  upload.array("mediaFiles", 10), // Accept up to 10 files
+  upload.array("mediaFiles", 10),
   (req, res) => {
     try {
       if (!req.files || req.files.length === 0) {
-        return res
-          .status(400)
-          .json({ success: false, message: "No files uploaded." });
+        return res.status(400).json({
+          success: false,
+          message: "No files uploaded",
+        });
       }
 
-      // Prepare response for uploaded files
-      const uploadedFiles = req.files.map(
-        (file) =>
-          path
-            .join("uploads", req.params.folderName, file.filename)
-            .replace(/\\/g, "/") // Replace backslashes with forward slashes
+      const files = req.files.map((file) =>
+        path
+          .join("uploads", req.params.folderName, file.filename)
+          .replace(/\\/g, "/")
       );
 
       res.status(200).json({
         success: true,
-        message: "Files uploaded successfully.",
-        files: uploadedFiles, // Returns clean file paths
+        message: "Files uploaded successfully",
+        files,
       });
     } catch (error) {
-      console.error(error);
-      res
-        .status(500)
-        .json({ success: false, message: "Error uploading files." });
+      console.error("Upload error:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Upload failed",
+      });
     }
   }
 );

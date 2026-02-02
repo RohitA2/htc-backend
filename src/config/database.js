@@ -47,7 +47,11 @@ const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
   host: DB_HOST,
   dialect: DB_DIALECT,
   // logging: process.env.NODE_ENV === 'development', // Enable logging only in development
-  logging:false
+  logging: false,
+  define: {
+    freezeTableName: true,   // 🔥 VERY IMPORTANT
+    timestamps: true
+  }
 });
 
 // Authenticate database connection
@@ -135,11 +139,11 @@ const clearDatabase = async () => {
 const initializeDatabase = async () => {
   try {
     await authenticateDatabase();
-      await syncModels();
+    // await syncModels();
     // Uncomment if needed:
     // await runAllSeeders();
-   //  await clearDatabase();
-    
+    // await clearDatabase();
+
   } catch (error) {
     console.error('Error initializing database:', error.message, error.stack);
     process.exit(1);

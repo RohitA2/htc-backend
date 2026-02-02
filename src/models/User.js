@@ -1,6 +1,5 @@
-// src/models/User.js
 const { verify } = require("jsonwebtoken");
-const { sequelize } = require("../config/database"); // Correct path to sequelize instance
+const { sequelize } = require("../config/database");
 const { DataTypes } = require("sequelize");
 
 const User = sequelize.define(
@@ -11,11 +10,7 @@ const User = sequelize.define(
       primaryKey: true,
       autoIncrement: true,
     },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    username: {
+    fullName: {
       type: DataTypes.STRING,
       allowNull: true,
     },
@@ -70,7 +65,7 @@ const User = sequelize.define(
     },
     blocked_at: {
       type: DataTypes.DATE,
-      allowNull: true, // This should be null if the user isn't blocked
+      allowNull: true,
     },
     is_verified: {
       type: DataTypes.BOOLEAN,
@@ -80,26 +75,7 @@ const User = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
-    marriageReadiness:{
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    verificationImages:{
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    image:{
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    residence:{
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    relationship_intentions:{
-      type: DataTypes.STRING,
-      allowNull: true,
-    }
+
   },
   {
     tableName: "Users",

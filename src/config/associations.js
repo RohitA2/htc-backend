@@ -24,17 +24,56 @@ Object.keys(models).forEach((modelName) => {
 sequelize.models = models;
 
 const defineAssociations = () => {
-  // Example of associations (modify according to your models)
 
-    models.User.hasMany(models.Transaction, { 
-      foreignKey: 'user_id', 
-      as: 'transactions',
-    });
+  /* ======================= COMPANY ASSOCIATIONS  ======================= */
 
-    models.Transaction.belongsTo(models.User, {
-      foreignKey: 'target_user_id',
-      as: 'targetUser',
-    });
+  models.Company.belongsTo(models.User, { foreignKey: "updateBy", as: "updatedByUser" });
+  models.User.hasMany(models.Company, { foreignKey: "updateBy" });
+
+  models.Company.hasMany(models.Bank, { foreignKey: "companyId", as: "banks" });
+  models.Bank.belongsTo(models.Company, { foreignKey: "companyId", as: "company" });
+
+  // Company → Bookings (1 : M)
+  models.Company.hasMany(models.Booking, { foreignKey: "companyId", as: "bookings", });
+  models.Booking.belongsTo(models.Company, { foreignKey: "companyId", as: "company", });
+
+
+  /* ======================= USER ASSOCIATIONS ======================= */
+
+  // User → Bookings (1 : M)
+  models.User.hasMany(models.Booking, { foreignKey: "updateBy", as: "updatedBookings", });
+  models.Booking.belongsTo(models.User, { foreignKey: "updateBy", as: "updatedByUser", });
+
+  /* ======================= PARTY → BOOKING ASSOCIATIONS ======================= */
+  models.Party.hasMany(models.Booking, { foreignKey: "partyId", as: "bookings", });
+  models.Booking.belongsTo(models.Party, { foreignKey: "partyId", as: "party",});
+
+  /* ======================= TRUCK → BOOKINGS ASSOCIATIONS ======================= */
+  models.Truck.hasMany(models.Booking, { foreignKey: "truckId" , as: "bookings",});
+  models.Booking.belongsTo(models.Truck, { foreignKey: "truckId" , as: "truck",});
+
+  /* ======================= BOOKING → PARTY PAYMENTS (💰 CREDIT) ASSOCIATIONS ======================= */
+  models.Booking.hasMany(models.PartyPayments, { foreignKey: "bookingId", as: "partyPayments", });
+  models.PartyPayments.belongsTo(models.Booking, { foreignKey: "bookingId", });
+
+  /* =======================BOOKING → TRUCK PAYMENTS (🚛 DEBIT) ASSOCIATIONS ======================= */
+  models.Booking.hasMany(models.TruckPayments, { foreignKey: "bookingId", as: "truckPayments", });
+  models.TruckPayments.belongsTo(models.Booking, { foreignKey: "bookingId", });
+
+  /* =======================BOOKING → COMMISSIONS (🧾 INCOME) ASSOCIATIONS ======================= */
+  models.Booking.hasMany(models.Commission, { foreignKey: "bookingId", as: "commissions", });
+  models.Commission.belongsTo(models.Booking, { foreignKey: "bookingId", });
+
+
+  /* =======================BOOKING → BILTY (🧾 INCOME) ASSOCIATIONS ======================= */
+  models.Booking.hasMany(models.Bilty, { foreignKey: "bookingId", });
+  models.Bilty.belongsTo(models.Booking, { foreignKey: "bookingId", });
+
+  /* =======================  BILTY → PARTY (🧾 INCOME) ASSOCIATIONS ======================= */
+
+  models.Bilty.belongsTo(models.Party, { foreignKey: 'partyId',as: "party", });
+  models.Party.hasMany(models.Bilty, { foreignKey: 'partyId' , as: "bilties",});
+
 
 };
 

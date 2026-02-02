@@ -18,11 +18,11 @@ const authMiddleware = (req, res, next) => {
 
     // Attach user info to request object for use in the route handler
     req.user = decoded;
-    console.log(`Authenticated user ID: ${req.user.id}`);
-    
+    // console.log(`Authenticated user ID: ${req.user.id}`);
+
     next();  // Proceed to the next middleware/handler
   } catch (error) {
-    return res.status(401).json({ message: 'Invalid or expired token' });
+    return res.status(401).json({ message: 'Invalid or expired token ! Please login again' });
   }
 };
 
