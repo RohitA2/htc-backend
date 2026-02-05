@@ -6,39 +6,42 @@ exports.getAllPartyLedgerSummary = async (req, res) => {
     try {
         const { search, status = "Active", fromDate, toDate } = req.query;
 
-        /* ✅ Party Filter */
+        /* ================= PARTY FILTER (ONLY STATUS) ================= */
         const partyWhere = {
             status,
-            ...(search
-                ? { partyName: { [Op.iLike]: `%${search}%` } }
-                : {}),
         };
 
-        /* ✅ Booking Date Filter */
+        /* ================= BOOKING DATE FILTER ================= */
         const bookingWhere = {
             isDeleted: false,
-            ...(fromDate && toDate
-                ? { date: { [Op.between]: [fromDate, toDate] } }
-                : {}),
-            ...(fromDate && !toDate
-                ? { date: { [Op.gte]: fromDate } }
-                : {}),
-            ...(!fromDate && toDate
-                ? { date: { [Op.lte]: toDate } }
-                : {}),
+            ...(fromDate && toDate && {
+                date: { [Op.between]: [fromDate, toDate] },
+            }),
+            ...(fromDate && !toDate && {
+                date: { [Op.gte]: fromDate },
+            }),
+            ...(!fromDate && toDate && {
+                date: { [Op.lte]: toDate },
+            }),
         };
 
+        /* ================= INCLUDE ================= */
         const include = [
             {
                 model: db.models.Booking,
                 as: "bookings",
-                where: bookingWhere,
                 required: false,
+                where: bookingWhere,
                 include: [
                     {
                         model: db.models.PartyPayments,
                         as: "partyPayments",
+                        required: false,
                         where: { isDeleted: false },
+                    },
+                    {
+                        model: db.models.Truck,
+                        as: "truck",
                         required: false,
                     },
                 ],
@@ -55,41 +58,86 @@ exports.getAllPartyLedgerSummary = async (req, res) => {
             return res.status(400).json(response);
         }
 
-        const result = response.data.map((party) => {
-            let totalFreight = 0;
-            let totalPaid = 0;
+        /* ================= DATA TRANSFORMATION ================= */
+        const result = response.data
+            .map((party) => {
+                let totalFreight = 0;
+                let totalPaid = 0;
 
-            party.bookings.forEach((booking) => {
-                totalFreight += Number(booking.partyFreight || 0);
+                let bookings = party.bookings || [];
 
-                booking.partyPayments.forEach((payment) => {
-                    totalPaid += Number(payment.amount || 0);
+                /* ================= SEARCH FILTER ================= */
+                if (search) {
+                    const searchText = search.toLowerCase();
+
+                    bookings = bookings.filter((b) =>
+                        party.partyName?.toLowerCase().includes(searchText) ||
+                        party.partyPhone?.includes(searchText) ||
+                        b.truck?.truckNo?.toLowerCase().includes(searchText)
+                    );
+                }
+
+                if (!bookings.length) return null;
+
+                bookings = bookings.map((booking) => {
+                    const freight = Number(booking.partyFreight || 0);
+
+                    totalFreight += freight;
+
+                    booking.partyPayments?.forEach((p) => {
+                        totalPaid += Number(p.amount || 0);
+                    });
+
+                    return {
+                        bookingId: booking.id,
+                        date: booking.date,
+                        freight,
+                        paid: booking.partyPayments?.reduce(
+                            (sum, p) => sum + Number(p.amount || 0),
+                            0
+                        ),
+                        balance:
+                            freight -
+                            booking.partyPayments?.reduce(
+                                (sum, p) => sum + Number(p.amount || 0),
+                                0
+                            ),
+                        truck: booking.truck
+                            ? {
+                                truckId: booking.truck.id,
+                                truckNo: booking.truck.truckNo,
+                                driverName: booking.truck.driverName,
+                            }
+                            : null,
+                    };
                 });
-            });
 
-            return {
-                partyId: party.id,
-                partyName: party.partyName,
-                partyPhone: party.partyPhone,
-                totalFreight,
-                totalPaid,
-                balance: totalFreight - totalPaid,
-            };
-        });
+                return {
+                    partyId: party.id,
+                    partyName: party.partyName,
+                    partyPhone: party.partyPhone,
+                    totalFreight,
+                    totalPaid,
+                    balance: totalFreight - totalPaid,
+                    bookings,
+                };
+            })
+            .filter(Boolean);
 
         res.json({
             success: true,
-            message: "Data retrieved successfully",
+            message: "Party ledger summary fetched successfully",
             data: result,
         });
     } catch (error) {
-        console.error(error);
+        console.error("Party Ledger Error:", error);
         res.status(500).json({
             success: false,
             message: error.message,
         });
     }
 };
+
 
 
 
@@ -107,16 +155,21 @@ exports.getPartyLedgerDetails = async (req, res) => {
             return res.status(404).json(partyResponse);
         }
 
-        /* 🔹 Fetch Bookings */
-        const bookingResponse = await myServices.checkAllExist(
-            db.models.Booking,
-            {
+        /* 🔹 Fetch Bookings WITH TRUCK */
+        const bookings = await db.models.Booking.findAll({
+            where: {
                 partyId,
                 isDeleted: false,
-            }
-        );
-
-        const bookings = bookingResponse.success ? bookingResponse.data : [];
+            },
+            include: [
+                {
+                    model: db.models.Truck,
+                    as: "truck",
+                    required: false,
+                },
+            ],
+            order: [["date", "ASC"]],
+        });
 
         let totalFreight = 0;
         let totalPaid = 0;
@@ -126,6 +179,7 @@ exports.getPartyLedgerDetails = async (req, res) => {
         for (const booking of bookings) {
             totalFreight += Number(booking.partyFreight);
 
+            /* 🔹 Fetch Payments */
             const paymentsResponse = await myServices.checkAllExist(
                 db.models.PartyPayments,
                 {
@@ -149,8 +203,8 @@ exports.getPartyLedgerDetails = async (req, res) => {
                         mode: p.paymentMode,
                         type: p.paymentType,
                         utrNo: p.utrNo,
+                        remarks: p.remarks,
                         runningBalance: bookingRunningBalance,
-                        remarks:p.remarks
                     });
                 }
             }
@@ -164,6 +218,18 @@ exports.getPartyLedgerDetails = async (req, res) => {
                 freight: Number(booking.partyFreight),
                 paid: Number(booking.partyFreight) - bookingRunningBalance,
                 balance: bookingRunningBalance,
+
+                /* 🚛 TRUCK DETAILS ADDED */
+                truck: booking.truck
+                    ? {
+                        truckId: booking.truck.id,
+                        truckNo: booking.truck.truckNo,
+                        driverName: booking.truck.driverName,
+                        driverPhone: booking.truck.driverPhone,
+                        transporterName: booking.truck.transporterName,
+                    }
+                    : null,
+
                 payments,
             });
         }
@@ -187,6 +253,7 @@ exports.getPartyLedgerDetails = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error" });
     }
 };
+
 
 
 exports.createPartyPartialPayment = async (req, res) => {
@@ -296,4 +363,160 @@ exports.createPartyPartialPayment = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error" });
     }
 };
+
+
+
+exports.getPartyTallyLedger = async (req, res) => {
+    try {
+        const { partyId } = req.params;
+        const { fromDate, toDate } = req.query;
+
+        /* PARTY CHECK */
+        const partyRes = await myServices.read(db.models.Party, partyId);
+        if (!partyRes.success) {
+            return res.status(404).json(partyRes);
+        }
+
+        const ledger = [];
+
+        const dateFilter =
+            fromDate && toDate
+                ? { [Op.between]: [fromDate, toDate] }
+                : fromDate
+                    ? { [Op.gte]: fromDate }
+                    : toDate
+                        ? { [Op.lte]: toDate }
+                        : null;
+
+        /* ================= BOOKINGS → DEBIT ================= */
+        const bookings = await db.models.Booking.findAll({
+            where: {
+                partyId,
+                isDeleted: false,
+                ...(dateFilter ? { date: dateFilter } : {}),
+            },
+            include: [{ model: db.models.Truck, as: "truck" }],
+            order: [["date", "ASC"]],
+        });
+
+        bookings.forEach((b) => {
+            ledger.push({
+                date: b.date,
+                particulars: `Booking ${b.fromLocation} → ${b.toLocation}${b.truck ? ` (${b.truck.truckNo})` : ""
+                    }`,
+                voucherType: "Booking",
+                voucherNo: b.id,
+                debit: Number(b.partyFreight),
+                credit: 0,
+            });
+        });
+
+        /* ================= PAYMENTS → CREDIT ================= */
+        const payments = await db.models.PartyPayments.findAll({
+            where: {
+                partyId,
+                isDeleted: false,
+                ...(dateFilter ? { paymentDate: dateFilter } : {}),
+            },
+            order: [["paymentDate", "ASC"]],
+        });
+
+        payments.forEach((p) => {
+            ledger.push({
+                date: p.paymentDate,
+                particulars: `Receipt (${p.paymentMode})`,
+                voucherType: "Receipt",
+                voucherNo: p.id,
+                debit: 0,
+                credit: Number(p.amount),
+            });
+        });
+
+        /* ================= SORT & RUNNING BALANCE ================= */
+        ledger.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        let balance = 0;
+        const finalLedger = ledger.map((row) => {
+            balance += row.debit;
+            balance -= row.credit;
+
+            return {
+                ...row,
+                balance,
+                balanceType: balance >= 0 ? "Dr" : "Cr",
+            };
+        });
+
+        res.json({
+            success: true,
+            party: {
+                id: partyRes.data.id,
+                name: partyRes.data.partyName,
+            },
+            openingBalance: 0,
+            closingBalance: balance,
+            ledger: finalLedger,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+
+
+
+exports.getPartyListForLedger = async (req, res) => {
+    try {
+        const { search, page = 1, limit = 20 } = req.query;
+
+        const where = {
+            status: "Active",
+            ...(search
+                ? {
+                    [Op.or]: [
+                        { partyName: { [Op.iLike]: `%${search}%` } },
+                        { partyPhone: { [Op.iLike]: `%${search}%` } },
+                    ],
+                }
+                : {}),
+        };
+
+        const response = await myServices.listPagination(
+            db.models.Party,
+            null,
+            page,
+            limit,
+            where
+        );
+
+        if (!response.success) {
+            return res.status(400).json(response);
+        }
+
+        const data = response.data.map((party) => ({
+            partyId: party.id,
+            partyName: party.partyName,
+            partyPhone: party.partyPhone,
+        }));
+
+        res.json({
+            success: true,
+            message: "Party list fetched successfully",
+            totalPages: response.totalPages,
+            count: response.count,
+            data,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+
+
+
 

@@ -11,7 +11,7 @@ const biltyRoutes = require("./biltyRoutes");
 const challanRoutes = require("./challanRoutes")
 const ledgerRoutes = require("./ledgerRoutes")
 const vendorLedgerRoutes = require("./vendorLedgerRoutes")
-
+const accountingRoutes = require("./accountingRoutes")
 
 
 module.exports = (app) => {
@@ -29,6 +29,7 @@ module.exports = (app) => {
   app.use("/api/challans", challanRoutes);
   app.use("/api/ledger", ledgerRoutes)
   app.use("/api/vendor", vendorLedgerRoutes)
+  app.use("/api/accounting", accountingRoutes)
 
 
 

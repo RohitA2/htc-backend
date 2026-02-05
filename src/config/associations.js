@@ -46,11 +46,11 @@ const defineAssociations = () => {
 
   /* ======================= PARTY → BOOKING ASSOCIATIONS ======================= */
   models.Party.hasMany(models.Booking, { foreignKey: "partyId", as: "bookings", });
-  models.Booking.belongsTo(models.Party, { foreignKey: "partyId", as: "party",});
+  models.Booking.belongsTo(models.Party, { foreignKey: "partyId", as: "party", });
 
   /* ======================= TRUCK → BOOKINGS ASSOCIATIONS ======================= */
-  models.Truck.hasMany(models.Booking, { foreignKey: "truckId" , as: "bookings",});
-  models.Booking.belongsTo(models.Truck, { foreignKey: "truckId" , as: "truck",});
+  models.Truck.hasMany(models.Booking, { foreignKey: "truckId", as: "bookings", });
+  models.Booking.belongsTo(models.Truck, { foreignKey: "truckId", as: "truck", });
 
   /* ======================= BOOKING → PARTY PAYMENTS (💰 CREDIT) ASSOCIATIONS ======================= */
   models.Booking.hasMany(models.PartyPayments, { foreignKey: "bookingId", as: "partyPayments", });
@@ -71,8 +71,33 @@ const defineAssociations = () => {
 
   /* =======================  BILTY → PARTY (🧾 INCOME) ASSOCIATIONS ======================= */
 
-  models.Bilty.belongsTo(models.Party, { foreignKey: 'partyId',as: "party", });
-  models.Party.hasMany(models.Bilty, { foreignKey: 'partyId' , as: "bilties",});
+  models.Bilty.belongsTo(models.Party, { foreignKey: 'partyId', as: "party", });
+  models.Party.hasMany(models.Bilty, { foreignKey: 'partyId', as: "bilties", });
+
+  /* ================= PARTY ↔ PARTY PAYMENTS ================= */
+
+  models.Party.hasMany(models.PartyPayments, {
+    foreignKey: "partyId",
+    as: "partyPayments",
+  });
+
+  models.PartyPayments.belongsTo(models.Party, {
+    foreignKey: "partyId",
+    as: "party",
+  });
+
+
+  /* ================= TRUCK ↔ TRUCK PAYMENTS ================= */
+
+models.Truck.hasMany(models.TruckPayments, {
+  foreignKey: "truckId",
+  as: "truckPayments",
+});
+
+models.TruckPayments.belongsTo(models.Truck, {
+  foreignKey: "truckId",
+  as: "truck",
+});
 
 
 };

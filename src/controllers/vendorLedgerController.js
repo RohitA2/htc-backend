@@ -4,38 +4,67 @@ const { Op } = require("sequelize");
 
 exports.getAllTruckLedgerSummary = async (req, res) => {
     try {
-        const { search } = req.query;
+        const { search, fromDate, toDate } = req.query;
 
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+
+        const isNumericSearch = !isNaN(search) && search !== "";
+
+        /* ================= TRUCK FILTER ================= */
         const truckWhere = search
-            ? { truckNo: { [Op.iLike]: `%${search}%` } }
+            ? {
+                [Op.or]: [
+                    { truckNo: { [Op.iLike]: `%${search}%` } },
+                    { driverName: { [Op.iLike]: `%${search}%` } },
+                    { transporterName: { [Op.iLike]: `%${search}%` } },
+                    ...(isNumericSearch ? [{ tyreCount: Number(search) }] : []),
+                ],
+            }
             : {};
+
+        /* ================= BOOKING DATE FILTER ================= */
+        const bookingWhere = {
+            isDeleted: false,
+            ...(fromDate && toDate && {
+                date: { [Op.between]: [fromDate, toDate] },
+            }),
+            ...(fromDate && !toDate && {
+                date: { [Op.gte]: fromDate },
+            }),
+            ...(!fromDate && toDate && {
+                date: { [Op.lte]: toDate },
+            }),
+        };
 
         const include = [
             {
                 model: db.models.Booking,
                 as: "bookings",
-                where: { isDeleted: false },
                 required: false,
+                where: bookingWhere,
                 include: [
                     {
                         model: db.models.TruckPayments,
                         as: "truckPayments",
-                        where: { isDeleted: false },
                         required: false,
+                        where: { isDeleted: false },
                     },
                     {
                         model: db.models.Commission,
                         as: "commissions",
-                        where: { isDeleted: false, commissionType: "truck" },
                         required: false,
+                        where: { isDeleted: false, commissionType: "truck" },
                     },
                 ],
             },
         ];
 
-        const response = await myServices.list(
+        const response = await myServices.listPagination(
             db.models.Truck,
             include,
+            page,
+            limit,
             truckWhere
         );
 
@@ -43,38 +72,50 @@ exports.getAllTruckLedgerSummary = async (req, res) => {
             return res.status(400).json(response);
         }
 
-        const data = response.data.map((truck) => {
-            let totalFreight = 0;
-            let totalPaid = 0;
-            let totalCommission = 0;
+        const data = response.data
+            .map((truck) => {
+                let totalFreight = 0;
+                let totalPaid = 0;
+                let totalCommission = 0;
 
-            truck.bookings.forEach((booking) => {
-                totalFreight += Number(booking.truckFreight || 0);
+                const bookings = truck.bookings || [];
+                if (!bookings.length) return null;
 
-                booking.truckPayments.forEach((p) => {
-                    totalPaid += Number(p.amount || 0);
+                bookings.forEach((booking) => {
+                    totalFreight += Number(booking.truckFreight || 0);
+                    booking.truckPayments?.forEach((p) => {
+                        totalPaid += Number(p.amount || 0);
+                    });
+                    booking.commissions?.forEach((c) => {
+                        totalCommission += Number(c.amount || 0);
+                    });
                 });
 
-                booking.commissions.forEach((c) => {
-                    totalCommission += Number(c.amount || 0);
-                });
-            });
+                const netPayable = totalFreight - totalCommission;
 
-            const netPayable = totalFreight - totalCommission;
+                return {
+                    truckId: truck.id,
+                    truckNo: truck.truckNo,
+                    driver: truck.driverName,
+                    totalFreight,
+                    totalCommission,
+                    netPayable,
+                    totalPaid,
+                    balance: netPayable - totalPaid,
+                };
+            })
+            .filter(Boolean);
 
-            return {
-                truckId: truck.id,
-                truckNo: truck.truckNo,
-                driver: truck.driverName,
-                totalFreight,
-                totalCommission,
-                netPayable,
-                totalPaid,
-                balance: netPayable - totalPaid,
-            };
+        res.json({
+            success: true,
+            pagination: {
+                page,
+                limit,
+                totalRecords: response.count,
+                totalPages: response.totalPages,
+            },
+            data,
         });
-
-        res.json({ success: true, data });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: error.message });
@@ -265,5 +306,190 @@ exports.createTruckPartialPayment = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+
+
+exports.getTruckListForLedger = async (req, res) => {
+    try {
+        const { search, page = 1, limit = 20 } = req.query;
+
+        const where = {
+            status: "Active",
+            ...(search
+                ? {
+                    [Op.or]: [
+                        { truckNo: { [Op.iLike]: `%${search}%` } },
+                        { driverName: { [Op.iLike]: `%${search}%` } },
+                        { transporterName: { [Op.iLike]: `%${search}%` } },
+                    ],
+                }
+                : {}),
+        };
+
+        const response = await myServices.listPagination(
+            db.models.Truck,
+            null,
+            page,
+            limit,
+            where
+        );
+
+        if (!response.success) {
+            return res.status(400).json(response);
+        }
+
+        const data = response.data.map((truck) => ({
+            truckId: truck.id,
+            truckNo: truck.truckNo,
+            driverName: truck.driverName,
+            driverPhone: truck.driverPhone,
+            transporterName: truck.transporterName,
+        }));
+
+        res.json({
+            success: true,
+            message: "Truck list fetched successfully",
+            totalPages: response.totalPages,
+            count: response.count,
+            data,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+
+
+
+exports.getTruckTallyLedger = async (req, res) => {
+    try {
+        const { truckId } = req.params;
+        const { fromDate, toDate } = req.query;
+
+        /* 🔹 Truck Check */
+        const truckRes = await myServices.read(db.models.Truck, truckId);
+        if (!truckRes.success) {
+            return res.status(404).json(truckRes);
+        }
+
+        const ledger = [];
+
+        const dateFilter =
+            fromDate && toDate
+                ? { [Op.between]: [fromDate, toDate] }
+                : fromDate
+                    ? { [Op.gte]: fromDate }
+                    : toDate
+                        ? { [Op.lte]: toDate }
+                        : null;
+
+        /* ================= BOOKINGS → CREDIT ================= */
+        const bookings = await db.models.Booking.findAll({
+            where: {
+                truckId,
+                isDeleted: false,
+                ...(dateFilter ? { date: dateFilter } : {}),
+            },
+            order: [["date", "ASC"]],
+        });
+
+        bookings.forEach((b) => {
+            ledger.push({
+                date: b.date,
+                particulars: `Freight for Booking Ref. #${b.id} (${b.fromLocation} → ${b.toLocation})`,
+                voucherType: "Booking",
+                voucherNo: b.id,
+                debit: 0,
+                credit: Number(b.truckFreight),
+            });
+        });
+
+        /* ================= TRUCK PAYMENTS → DEBIT ================= */
+        const payments = await db.models.TruckPayments.findAll({
+            where: {
+                truckId,
+                isDeleted: false,
+                ...(dateFilter ? { paymentDate: dateFilter } : {}),
+            },
+            order: [["paymentDate", "ASC"]],
+        });
+
+        payments.forEach((p) => {
+            ledger.push({
+                date: p.paymentDate,
+                particulars: `Payment (${p.paymentMode})`,
+                voucherType: "Payment",
+                voucherNo: p.id,
+                debit: Number(p.amount),
+                credit: 0,
+            });
+        });
+
+        /* ================= COMMISSION → DEBIT ================= */
+        const commissions = await db.models.Commission.findAll({
+            where: {
+                commissionType: "truck",
+                isDeleted: false,
+            },
+            include: [
+                {
+                    model: db.models.Booking,
+                    where: {
+                        truckId,
+                        ...(dateFilter ? { date: dateFilter } : {}),
+                    },
+                },
+            ],
+        });
+
+        commissions.forEach((c) => {
+            ledger.push({
+                date: c.paymentDate || c.createdAt,
+                particulars: `Commission (Booking Ref. #${c.bookingId})`,
+                voucherType: "Commission",
+                voucherNo: c.id,
+                debit: Number(c.amount),
+                credit: 0,
+            });
+        });
+
+        /* ================= SORT & RUNNING BALANCE ================= */
+        ledger.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        let balance = 0;
+        const finalLedger = ledger.map((row) => {
+            balance -= row.debit;   // truck ledger rule
+            balance += row.credit;
+
+            return {
+                ...row,
+                balance,
+                balanceType: balance >= 0 ? "Cr" : "Dr",
+            };
+        });
+
+        res.json({
+            success: true,
+            truck: {
+                id: truckRes.data.id,
+                truckNo: truckRes.data.truckNo,
+                driverName: truckRes.data.driverName,
+            },
+            openingBalance: 0,
+            closingBalance: balance,
+            ledger: finalLedger,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: error.message,
+        });
     }
 };
