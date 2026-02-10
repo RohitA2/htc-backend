@@ -52,6 +52,18 @@ const TruckPayments = sequelize.define('TruckPayments', {
         type: DataTypes.STRING,
         allowNull: true
     },
+    paymentFor: {
+        type: DataTypes.ENUM("freight", "halting"),
+        defaultValue: "freight",
+    },
+    PanNumber: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    remarks: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
     isDeleted: {
         type: DataTypes.BOOLEAN,
         defaultValue: false,

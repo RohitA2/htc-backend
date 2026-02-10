@@ -24,6 +24,14 @@ const Bilty = sequelize.define('Bilty', {
             key: 'id'
         }
     },
+    companyId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'Companies',
+            key: 'id'
+        }
+    },
     biltyDate: {
         type: DataTypes.DATE,
         allowNull: false

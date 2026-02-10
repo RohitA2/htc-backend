@@ -91,7 +91,7 @@ exports.getAllTruckLedgerSummary = async (req, res) => {
                     });
                 });
 
-                const netPayable = totalFreight - totalCommission;
+                const netPayable = totalFreight;
 
                 return {
                     truckId: truck.id,
@@ -164,7 +164,7 @@ exports.getTruckLedgerDetails = async (req, res) => {
                 0
             );
 
-            const netAmount = freight - commission;
+            const netAmount = freight;
 
             let runningBalance = netAmount;
 
@@ -209,9 +209,9 @@ exports.getTruckLedgerDetails = async (req, res) => {
             summary: {
                 totalFreight,
                 totalCommission,
-                netPayable: totalFreight - totalCommission,
+                netPayable: totalFreight,
                 totalPaid,
-                balance: totalFreight - totalCommission - totalPaid,
+                balance: totalFreight - totalPaid,
             },
             bookings: ledger,
         });
@@ -372,7 +372,7 @@ exports.getTruckTallyLedger = async (req, res) => {
         const { truckId } = req.params;
         const { fromDate, toDate } = req.query;
 
-        /* 🔹 Truck Check */
+        /* ================= TRUCK CHECK ================= */
         const truckRes = await myServices.read(db.models.Truck, truckId);
         if (!truckRes.success) {
             return res.status(404).json(truckRes);
@@ -407,6 +407,7 @@ exports.getTruckTallyLedger = async (req, res) => {
                 voucherNo: b.id,
                 debit: 0,
                 credit: Number(b.truckFreight),
+                commission: 0,
             });
         });
 
@@ -428,10 +429,11 @@ exports.getTruckTallyLedger = async (req, res) => {
                 voucherNo: p.id,
                 debit: Number(p.amount),
                 credit: 0,
+                commission: 0,
             });
         });
 
-        /* ================= COMMISSION → DEBIT ================= */
+        /* ================= COMMISSION → DISPLAY ONLY ================= */
         const commissions = await db.models.Commission.findAll({
             where: {
                 commissionType: "truck",
@@ -454,8 +456,9 @@ exports.getTruckTallyLedger = async (req, res) => {
                 particulars: `Commission (Booking Ref. #${c.bookingId})`,
                 voucherType: "Commission",
                 voucherNo: c.id,
-                debit: Number(c.amount),
-                credit: 0,
+                debit: 0,           // ❌ no balance impact
+                credit: 0,          // ❌ no balance impact
+                commission: Number(c.amount), // ✅ visible
             });
         });
 
@@ -474,6 +477,7 @@ exports.getTruckTallyLedger = async (req, res) => {
             };
         });
 
+        /* ================= RESPONSE ================= */
         res.json({
             success: true,
             truck: {
@@ -485,6 +489,7 @@ exports.getTruckTallyLedger = async (req, res) => {
             closingBalance: balance,
             ledger: finalLedger,
         });
+
     } catch (error) {
         console.error(error);
         res.status(500).json({

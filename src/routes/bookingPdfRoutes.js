@@ -11,6 +11,9 @@ router.get('/difference-slip/:id', bookingPdfController.generateDifferenceSlip);
 router.get('/booking-slip/:id', bookingPdfController.generateBookingSlip);
 
 // Generate Bilty Slip
-router.get('/bilty-slip/:id', authMiddleware, bookingPdfController.generateBiltySlip);
+router.get('/bilty-slip/:bookingId', authMiddleware, bookingPdfController.getBiltyByBookingId);
+
+
+// router.get('/details-slip/:bookingId', bookingPdfController.getBiltyByBookingId);
 
 module.exports = router;

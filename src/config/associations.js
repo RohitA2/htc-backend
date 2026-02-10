@@ -100,6 +100,15 @@ models.TruckPayments.belongsTo(models.Truck, {
 });
 
 
+
+models.Booking.hasMany(models.BookingHalting, { foreignKey: "bookingId", as: "haltings" });
+models.BookingHalting.belongsTo(models.Booking, { foreignKey: "bookingId", as: "booking" });
+
+models.Truck.hasMany(models.BookingHalting, { foreignKey: "truckId", as: "haltings" });
+models.BookingHalting.belongsTo(models.Truck, { foreignKey: "truckId", as: "truck" });
+
+
+
 };
 
 module.exports = defineAssociations;

@@ -1,8 +1,12 @@
 const db = require("../config/database");
 const { Op } = require("sequelize");
-exports.getDayBook = async (req, res) => {
+
+/* =====================================================
+   INTERNAL : DAY BOOK DATA (CORE ENGINE)
+===================================================== */
+const getDayBookData = async (query = {}) => {
   try {
-    const { date } = req.query;
+    const { date } = query;
 
     const dayFilter = date
       ? {
@@ -11,11 +15,11 @@ exports.getDayBook = async (req, res) => {
           new Date(`${date} 23:59:59`),
         ],
       }
-      : undefined;
+      : null;
 
     const entries = [];
 
-    /* ===================== BOOKINGS (JOURNAL) ===================== */
+    /* ===================== BOOKINGS ===================== */
     const bookings = await db.models.Booking.findAll({
       where: {
         isDeleted: false,
@@ -25,17 +29,16 @@ exports.getDayBook = async (req, res) => {
         { model: db.models.Party, as: "party" },
         { model: db.models.Truck, as: "truck" },
       ],
-      order: [["date", "ASC"]],
     });
 
-    bookings.forEach((b) => {
+    for (const b of bookings) {
       // Party Debit
       entries.push({
         date: b.date,
-        voucherType: "Booking",
-        voucherNo: b.id,
-        ledger: b.party.partyName,
-        particulars: `Booking ${b.fromLocation} → ${b.toLocation}`,
+        voucherType: "Journal",
+        voucherNo: `BK-${b.id}`,
+        ledger: `Party - ${b.party.partyName}`,
+        particulars: `${b.fromLocation} → ${b.toLocation}`,
         debit: Number(b.partyFreight),
         credit: 0,
       });
@@ -43,178 +46,200 @@ exports.getDayBook = async (req, res) => {
       // Truck Credit
       entries.push({
         date: b.date,
-        voucherType: "Booking",
-        voucherNo: b.id,
-        ledger: b.truck.truckNo,
+        voucherType: "Journal",
+        voucherNo: `BK-${b.id}`,
+        ledger: `Truck - ${b.truck.truckNo}`,
         particulars: "Truck Freight",
         debit: 0,
         credit: Number(b.truckFreight),
       });
 
-      // Commission / Difference Credit
-      if (b.differenceAmount && Number(b.differenceAmount) > 0) {
+      // Difference Income
+      const diff =
+        Number(b.partyFreight) - Number(b.truckFreight);
+
+      if (diff > 0) {
         entries.push({
           date: b.date,
-          voucherType: "Booking",
-          voucherNo: b.id,
-          ledger: "Commission / Difference",
-          particulars: "Booking Difference",
+          voucherType: "Journal",
+          voucherNo: `BK-${b.id}`,
+          ledger: "Difference Income",
+          particulars: "Booking Margin",
           debit: 0,
-          credit: Number(b.differenceAmount),
+          credit: diff,
         });
       }
-    });
+    }
 
-    /* ===================== PARTY PAYMENTS (RECEIPT) ===================== */
+    /* ===================== PARTY PAYMENTS ===================== */
     const partyPayments = await db.models.PartyPayments.findAll({
       where: {
         isDeleted: false,
         ...(dayFilter ? { paymentDate: dayFilter } : {}),
       },
       include: [{ model: db.models.Party, as: "party" }],
-      order: [["paymentDate", "ASC"]],
     });
 
-    partyPayments.forEach((p) => {
-      // Cash/Bank Debit
-      entries.push({
-        date: p.paymentDate,
-        voucherType: "Receipt",
-        voucherNo: p.id,
-        ledger: p.paymentMode === "cash" ? "Cash" : p.bankName || "Bank",
-        particulars: `Receipt from ${p.party.partyName}`,
-        debit: Number(p.amount),
-        credit: 0,
-      });
+    for (const p of partyPayments) {
+      const cashLedger =
+        p.paymentMode === "cash"
+          ? "Cash"
+          : `Bank - ${p.bankName || "Bank"}`;
 
-      // Party Credit
-      entries.push({
-        date: p.paymentDate,
-        voucherType: "Receipt",
-        voucherNo: p.id,
-        ledger: p.party.partyName,
-        particulars: `Receipt (${p.paymentMode})`,
-        debit: 0,
-        credit: Number(p.amount),
-      });
-    });
+      entries.push(
+        {
+          date: p.paymentDate,
+          voucherType: "Receipt",
+          voucherNo: `RC-${p.id}`,
+          ledger: cashLedger,
+          particulars: `From ${p.party.partyName}`,
+          debit: Number(p.amount),
+          credit: 0,
+        },
+        {
+          date: p.paymentDate,
+          voucherType: "Receipt",
+          voucherNo: `RC-${p.id}`,
+          ledger: `Party - ${p.party.partyName}`,
+          particulars: "Payment Received",
+          debit: 0,
+          credit: Number(p.amount),
+        }
+      );
+    }
 
-    /* ===================== TRUCK PAYMENTS (PAYMENT) ===================== */
+    /* ===================== TRUCK PAYMENTS ===================== */
     const truckPayments = await db.models.TruckPayments.findAll({
       where: {
         isDeleted: false,
         ...(dayFilter ? { paymentDate: dayFilter } : {}),
       },
       include: [{ model: db.models.Truck, as: "truck" }],
-      order: [["paymentDate", "ASC"]],
     });
 
-    truckPayments.forEach((p) => {
-      // Truck Debit
-      entries.push({
-        date: p.paymentDate,
-        voucherType: "Payment",
-        voucherNo: p.id,
-        ledger: p.truck.truckNo,
-        particulars: "Truck Payment",
-        debit: Number(p.amount),
-        credit: 0,
-      });
+    for (const p of truckPayments) {
+      const cashLedger =
+        p.paymentMode === "cash"
+          ? "Cash"
+          : `Bank - ${p.bankName || "Bank"}`;
 
-      // Cash/Bank Credit
-      entries.push({
-        date: p.paymentDate,
-        voucherType: "Payment",
-        voucherNo: p.id,
-        ledger: p.paymentMode === "cash" ? "Cash" : p.bankName || "Bank",
-        particulars: `Paid to Truck`,
-        debit: 0,
-        credit: Number(p.amount),
-      });
+      entries.push(
+        {
+          date: p.paymentDate,
+          voucherType: "Payment",
+          voucherNo: `PM-${p.id}`,
+          ledger: `Truck - ${p.truck.truckNo}`,
+          particulars: "Truck Payment",
+          debit: Number(p.amount),
+          credit: 0,
+        },
+        {
+          date: p.paymentDate,
+          voucherType: "Payment",
+          voucherNo: `PM-${p.id}`,
+          ledger: cashLedger,
+          particulars: "Paid to Truck",
+          debit: 0,
+          credit: Number(p.amount),
+        }
+      );
+    }
+
+    /* ===================== TRUCK COMMISSION ===================== */
+    const commissions = await db.models.Commission.findAll({
+      where: {
+        isDeleted: false,
+        commissionType: "truck",
+        ...(dayFilter ? { paymentDate: dayFilter } : {}),
+      },
+      include: [
+        {
+          model: db.models.Booking,
+          include: [
+            {
+              model: db.models.Truck,
+              as: "truck",
+            },
+          ],
+        },
+      ],
     });
 
-    /* ===================== SORT BY DATE ===================== */
+
+    for (const c of commissions) {
+      const truckNo = c.booking?.truck?.truckNo || "Unknown Truck";
+
+      const cashLedger =
+        c.paymentMode === "cash"
+          ? "Cash"
+          : `Bank - ${c.bankName || "Bank"}`;
+
+      entries.push(
+        {
+          date: c.paymentDate,
+          voucherType: "Receipt",
+          voucherNo: `CM-${c.id}`,
+          ledger: cashLedger,
+          particulars: `Commission from ${truckNo}`,
+          debit: Number(c.amount),
+          credit: 0,
+        },
+        {
+          date: c.paymentDate,
+          voucherType: "Receipt",
+          voucherNo: `CM-${c.id}`,
+          ledger: "Commission Income",
+          particulars: "Truck Commission",
+          debit: 0,
+          credit: Number(c.amount),
+        }
+      );
+    }
+
+
     entries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    res.json({
-      success: true,
-      date: date || "All",
-      data: entries,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    return { success: true, data: entries };
+  } catch (e) {
+    return { success: false, message: e.message };
   }
 };
 
+/* =====================================================
+   DAY BOOK API
+===================================================== */
+exports.getDayBook = async (req, res) => {
+  const result = await getDayBookData(req.query);
+  if (!result.success) return res.status(500).json(result);
+  res.json(result);
+};
 
-
+/* =====================================================
+   TRIAL BALANCE
+===================================================== */
 exports.getTrialBalance = async (req, res) => {
   try {
-    let rows = [];
+    const result = await getDayBookData(req.query);
+    if (!result.success) return res.status(500).json(result);
 
-    /* PARTY LEDGERS */
-    const parties = await db.models.Party.findAll({ where: { status: "Active" } });
+    const ledgerMap = {};
 
-    for (const party of parties) {
-      const bookings = await db.models.Booking.findAll({
-        where: { partyId: party.id, isDeleted: false },
-      });
-      const payments = await db.models.PartyPayments.findAll({
-        where: { partyId: party.id, isDeleted: false },
-      });
-
-      const debit = bookings.reduce((s, b) => s + Number(b.partyFreight), 0);
-      const credit = payments.reduce((s, p) => s + Number(p.amount), 0);
-      const bal = debit - credit;
-
-      if (bal !== 0) {
-        rows.push({
-          ledger: `Party - ${party.partyName}`,
-          debit: bal > 0 ? bal : 0,
-          credit: bal < 0 ? Math.abs(bal) : 0,
-        });
+    for (const e of result.data) {
+      if (!ledgerMap[e.ledger]) {
+        ledgerMap[e.ledger] = { debit: 0, credit: 0 };
       }
+      ledgerMap[e.ledger].debit += Number(e.debit || 0);
+      ledgerMap[e.ledger].credit += Number(e.credit || 0);
     }
 
-    /* TRUCK LEDGERS */
-    const trucks = await db.models.Truck.findAll({ where: { status: "Active" } });
-
-    for (const truck of trucks) {
-      const bookings = await db.models.Booking.findAll({
-        where: { truckId: truck.id, isDeleted: false },
-      });
-      const payments = await db.models.TruckPayments.findAll({
-        where: { truckId: truck.id, isDeleted: false },
-      });
-
-      const credit = bookings.reduce((s, b) => s + Number(b.truckFreight), 0);
-      const debit = payments.reduce((s, p) => s + Number(p.amount), 0);
-      const bal = credit - debit;
-
-      if (bal !== 0) {
-        rows.push({
-          ledger: `Truck - ${truck.truckNo}`,
-          debit: bal < 0 ? Math.abs(bal) : 0,
-          credit: bal > 0 ? bal : 0,
-        });
-      }
-    }
-
-    /* COMMISSION */
-    const commissions = await db.models.Commission.findAll({ where: { isDeleted: false } });
-    const commissionTotal = commissions.reduce((s, c) => s + Number(c.amount), 0);
-
-    if (commissionTotal > 0) {
-      rows.push({
-        ledger: "Commission Income",
-        debit: 0,
-        credit: commissionTotal,
-      });
-    }
+    const rows = Object.entries(ledgerMap).map(([ledger, v]) => {
+      const bal = v.debit - v.credit;
+      return {
+        ledger,
+        debit: bal > 0 ? bal : 0,
+        credit: bal < 0 ? Math.abs(bal) : 0,
+      };
+    });
 
     const totalDebit = rows.reduce((s, r) => s + r.debit, 0);
     const totalCredit = rows.reduce((s, r) => s + r.credit, 0);
@@ -231,8 +256,9 @@ exports.getTrialBalance = async (req, res) => {
   }
 };
 
-
-
+/* =====================================================
+   PROFIT & LOSS
+===================================================== */
 exports.getProfitLoss = async (req, res) => {
   try {
     const bookings = await db.models.Booking.findAll({
@@ -243,24 +269,20 @@ exports.getProfitLoss = async (req, res) => {
       where: { isDeleted: false },
     });
 
-    const income = bookings.reduce(
-      (s, b) => s + Number(b.partyFreight),
-      0
-    ) + commissions.reduce((s, c) => s + Number(c.amount), 0);
-
-    const expense = bookings.reduce(
-      (s, b) => s + Number(b.truckFreight),
-      0
-    );
-
-    const profit = income - expense;
+    const income =
+      bookings.reduce(
+        (s, b) =>
+          s + (Number(b.partyFreight) - Number(b.truckFreight)),
+        0
+      ) +
+      commissions.reduce((s, c) => s + Number(c.amount), 0);
 
     res.json({
       success: true,
       income,
-      expense,
-      netProfit: profit,
-      result: profit >= 0 ? "PROFIT" : "LOSS",
+      expense: 0,
+      netProfit: income,
+      result: income >= 0 ? "PROFIT" : "LOSS",
     });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
