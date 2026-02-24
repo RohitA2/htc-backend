@@ -17,17 +17,14 @@ exports.createFullBooking = async (payload, userId) => {
             transaction: t,
         });
 
-        if (!truck) {
-            truck = await db.models.Truck.create({
-                truckNo: payload.truckNo,
-                tyreCount: payload.tyreCount,
-                driverName: payload.driverName,
-                driverPhone: payload.driverPhone,
-                transporterName: payload.transporterName,
-                transporterPhone: payload.transporterPhone,
-            }, { transaction: t });
-        }
-
+        truck = await db.models.Truck.create({
+            truckNo: payload.truckNo,
+            tyreCount: payload.tyreCount,
+            driverName: payload.driverName,
+            driverPhone: payload.driverPhone,
+            transporterName: payload.transporterName,
+            transporterPhone: payload.transporterPhone,
+        }, { transaction: t });
         /* ===================== 3️⃣ BOOKING ===================== */
         const booking = await db.models.Booking.create({
             date: payload.date,
@@ -38,6 +35,7 @@ exports.createFullBooking = async (payload, userId) => {
             rate: payload.rate,
             truckRate: payload.truckRate,
             weight: payload.weight,
+            unloadingWeight: payload.unloadingWeight,
             weightType: payload.weightType,
             partyFreight: payload.partyFreight,
             truckFreight: payload.truckFreight,
@@ -76,6 +74,8 @@ exports.createFullBooking = async (payload, userId) => {
                 utrNo: payload.truckUtrNo || null,
                 paymentType: "Debit",
                 PanNumber: payload.truckPanNumber || null,
+                bankAcHolderName: payload.bankAcHolderName || null,
+                ifscCode: payload.truckIfscCode || null,
                 remark: "Freight Advance",
             }, { transaction: t });
         }
@@ -133,15 +133,64 @@ exports.createFullBooking = async (payload, userId) => {
             }
         }
 
+        /* ===================== 7.5️⃣ DRIVER CHECK / CREATE ===================== */
+
+        let driverId = payload.driverId || null;
+
+        // If company driver not selected → market driver
+        if (!driverId && payload.driverPhone) {
+
+            const existingDriver = await db.models.Driver.findOne({
+                where: { phone: payload.driverPhone },
+                transaction: t
+            });
+
+            if (existingDriver) {
+                driverId = existingDriver.id;
+            } else {
+
+                const newDriver = await db.models.Driver.create({
+                    driverName: payload.driverName,
+                    phone: payload.driverPhone,
+                    licenseNumber: payload.licenseNumber,
+                    licenseExpiry: payload.licenseExpiry
+                }, { transaction: t });
+
+                driverId = newDriver.id;
+            }
+        }
+
+        /* ===================== 8️⃣ TRIP ASSIGNMENT ===================== */
+
+        await db.models.TripAssignment.create({
+
+            bookingId: booking.id,
+            truckId: truck.id,
+
+            // Company Driver
+            driverId: driverId,
+
+            // Temporary / Market Driver
+            driverName: payload.driverName || null,
+            driverPhone: payload.driverPhone || null,
+            licenseNumber: payload.licenseNumber || null,
+            licenseExpiry: payload.licenseExpiry || null,
+
+        }, { transaction: t });
+
+
+        // 🚨 Update Truck Status
+        await db.models.Truck.update(
+            { status: 'OnTrip' },
+            { where: { id: truck.id }, transaction: t }
+        );
+
         return booking;
     });
 };
 
 
 
-
-
-/* 🛠 SAFE DATE PARSER (DD/MM/YYYY → JS Date) */
 // const parseDate = (dateStr) => {
 //     if (!dateStr) return null;
 
@@ -275,183 +324,238 @@ exports.createFullBooking = async (payload, userId) => {
 
 
 const parseDate = (dateStr) => {
-  if (!dateStr) return null;
-  const m = moment(dateStr, "DD/MM/YYYY", true);
-  return m.isValid() ? m.startOf("day").toDate() : null;
+    if (!dateStr) return null;
+    const m = moment(dateStr, "DD/MM/YYYY", true);
+    return m.isValid() ? m.startOf("day").toDate() : null;
 };
 
 exports.getBookings = async (query) => {
-  const page = parseInt(query.page) || 1;
-  const limit = parseInt(query.limit) || 10;
-  const offset = (page - 1) * limit;
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 10;
+    const offset = (page - 1) * limit;
 
-  const where = { isDeleted: false };
+    const where = { isDeleted: false };
 
-  /* ================= STATUS FILTER ================= */
-  if (query.status && query.status !== "all") {
-    where.status = query.status;
-  }
+    /* ================= STATUS FILTER ================= */
+    if (query.status && query.status !== "all") {
+        where.status = query.status;
+    }
 
-  /* ================= SEARCH ================= */
-  if (query.search && query.search.trim()) {
-    const search = `%${query.search.trim()}%`;
+    /* ================= SEARCH ================= */
+    if (query.search && query.search.trim()) {
+        const search = `%${query.search.trim()}%`;
 
-    where[Op.or] = [
-      { commodity: { [Op.iLike]: search } },
-      { fromLocation: { [Op.iLike]: search } },
-      { toLocation: { [Op.iLike]: search } },
+        where[Op.or] = [
+            { commodity: { [Op.iLike]: search } },
+            { fromLocation: { [Op.iLike]: search } },
+            { toLocation: { [Op.iLike]: search } },
 
-      { "$party.partyName$": { [Op.iLike]: search } },
-      { "$party.partyPhone$": { [Op.iLike]: search } },
+            { "$party.partyName$": { [Op.iLike]: search } },
+            { "$party.partyPhone$": { [Op.iLike]: search } },
 
-      { "$truck.truckNo$": { [Op.iLike]: search } },
-      { "$truck.driverName$": { [Op.iLike]: search } },
-      { "$truck.driverPhone$": { [Op.iLike]: search } },
-    ];
-  }
+            { "$truck.truckNo$": { [Op.iLike]: search } },
+            { "$truck.driverName$": { [Op.iLike]: search } },
+            { "$truck.driverPhone$": { [Op.iLike]: search } },
+        ];
+    }
 
-  /* ================= DATE FILTER ================= */
-  const fromDate = parseDate(query.fromDate);
-  const toDate = parseDate(query.toDate);
+    /* ================= DATE FILTER ================= */
+    const fromDate = parseDate(query.fromDate);
+    const toDate = parseDate(query.toDate);
 
-  if (fromDate && toDate) {
-    where.date = { [Op.between]: [fromDate, toDate] };
-  } else if (fromDate) {
-    where.date = { [Op.gte]: fromDate };
-  } else if (toDate) {
-    where.date = { [Op.lte]: toDate };
-  }
+    if (fromDate && toDate) {
+        where.date = { [Op.between]: [fromDate, toDate] };
+    } else if (fromDate) {
+        where.date = { [Op.gte]: fromDate };
+    } else if (toDate) {
+        where.date = { [Op.lte]: toDate };
+    }
 
-  /* ================= OPTIONAL FILTERS ================= */
-  if (query.companyId) where.companyId = query.companyId;
-  if (query.partyId) where.partyId = query.partyId;
-  if (query.truckId) where.truckId = query.truckId;
+    /* ================= OPTIONAL FILTERS ================= */
+    if (query.companyId) where.companyId = query.companyId;
+    if (query.partyId) where.partyId = query.partyId;
+    if (query.truckId) where.truckId = query.truckId;
 
-  /* ================= MAIN QUERY ================= */
-  const { rows, count } = await db.models.Booking.findAndCountAll({
-    where,
-    limit,
-    offset,
-    order: [["date", "DESC"]],
-    distinct: true,
-    subQuery: false,
+    /* ================= MAIN QUERY ================= */
+    const { rows, count } = await db.models.Booking.findAndCountAll({
+        where,
+        // limit,
+        // offset,
+        order: [["date", "DESC"]],
+        distinct: true,
+        subQuery: false,
 
-    include: [
-      /* COMPANY */
-      {
-        model: db.models.Company,
-        as: "company",
-        attributes: ["id", "companyName"],
         include: [
-          {
-            model: db.models.Bank,
-            as: "banks",
-            attributes: [
-              "id",
-              "accountNo",
-              "acHolderName",
-              "branchName",
-              "IFSCode",
-            ],
-          },
+            /* COMPANY */
+            {
+                model: db.models.Company,
+                as: "company",
+                attributes: ["id", "companyName"],
+                include: [
+                    {
+                        model: db.models.Bank,
+                        as: "banks",
+                        attributes: [
+                            "id",
+                            "accountNo",
+                            "acHolderName",
+                            "branchName",
+                            "IFSCode",
+                        ],
+                    },
+                ],
+            },
+
+            /* PARTY */
+            {
+                model: db.models.Party,
+                as: "party",
+                attributes: ["id", "partyName", "partyPhone"],
+                required: false,
+            },
+
+            /* TRUCK */
+            {
+                model: db.models.Truck,
+                as: "truck",
+                attributes: ["id", "truckNo", "driverName", "driverPhone"],
+                required: false,
+            },
+
+            /* PARTY PAYMENTS */
+            {
+                model: db.models.PartyPayments,
+                as: "partyPayments",
+                where: { isDeleted: false },
+                required: false,
+            },
+
+            /* TRUCK PAYMENTS (FREIGHT + HALTING) */
+            {
+                model: db.models.TruckPayments,
+                as: "truckPayments",
+                where: { isDeleted: false },
+                required: false,
+                attributes: [
+                    "id",
+                    "amount",
+                    "paymentMode",
+                    "paymentDate",
+                    "paymentFor", // 🔥 freight | halting
+                    "utrNo",
+                    "remarks",
+                    "PanNumber",
+                    "bankAccountNo",
+                    "ifscCode",
+                    "bankName",
+                    "bankAcHolderName",
+                ],
+            },
+
+            /* HALTING DETAILS */
+            {
+                model: db.models.BookingHalting,
+                as: "haltings",
+                where: { isDeleted: false },
+                required: false,
+                attributes: [
+                    "id",
+                    "haltingDate",
+                    "days",
+                    "pricePerDay",
+                    "amount",
+                    "paymentStatus",
+                    "reason",
+                ],
+            },
+
+            /* COMMISSION */
+            {
+                model: db.models.Commission,
+                as: "commissions",
+                where: { isDeleted: false },
+                required: false,
+                attributes: [
+                    "id",
+                    "amount",
+                    "commissionType",
+                    "paymentMode",
+                    "paymentDate",
+                    "remark",
+                ],
+            },
+
+            /* UPDATED BY USER */
+            {
+                model: db.models.User,
+                as: "updatedByUser",
+                attributes: ["id", "fullName", "email"],
+            },
         ],
-      },
+    });
 
-      /* PARTY */
-      {
-        model: db.models.Party,
-        as: "party",
-        attributes: ["id", "partyName", "partyPhone"],
-        required: false,
-      },
-
-      /* TRUCK */
-      {
-        model: db.models.Truck,
-        as: "truck",
-        attributes: ["id", "truckNo", "driverName", "driverPhone"],
-        required: false,
-      },
-
-      /* PARTY PAYMENTS */
-      {
-        model: db.models.PartyPayments,
-        as: "partyPayments",
-        where: { isDeleted: false },
-        required: false,
-      },
-
-      /* TRUCK PAYMENTS (FREIGHT + HALTING) */
-      {
-        model: db.models.TruckPayments,
-        as: "truckPayments",
-        where: { isDeleted: false },
-        required: false,
-        attributes: [
-          "id",
-          "amount",
-          "paymentMode",
-          "paymentDate",
-          "paymentFor", // 🔥 freight | halting
-          "utrNo",
-          "remarks",
-        ],
-      },
-
-      /* HALTING DETAILS */
-      {
-        model: db.models.BookingHalting,
-        as: "haltings",
-        where: { isDeleted: false },
-        required: false,
-        attributes: [
-          "id",
-          "haltingDate",
-          "days",
-          "pricePerDay",
-          "amount",
-          "paymentStatus",
-          "reason",
-        ],
-      },
-
-      /* COMMISSION */
-      {
-        model: db.models.Commission,
-        as: "commissions",
-        where: { isDeleted: false },
-        required: false,
-        attributes: [
-          "id",
-          "amount",
-          "commissionType",
-          "paymentMode",
-          "paymentDate",
-          "remark",
-        ],
-      },
-
-      /* UPDATED BY USER */
-      {
-        model: db.models.User,
-        as: "updatedByUser",
-        attributes: ["id", "fullName", "email"],
-      },
-    ],
-  });
-
-  return {
-    data: rows,
-    pagination: {
-      total: count,
-      page,
-      limit,
-      totalPages: Math.ceil(count / limit),
-    },
-  };
+    return {
+        data: rows,
+        pagination: {
+            total: count,
+            page,
+            limit,
+            totalPages: Math.ceil(count / limit),
+        },
+    };
 };
 
 
+
+// exports.getBookingById = async (id) => {
+//     const booking = await db.models.Booking.findByPk(id, {
+//         include: [
+//             {
+//                 model: db.models.Company,
+//                 as: "company",
+//                 attributes: ["id", "companyName"],
+//                 include: [
+//                     {
+//                         model: db.models.Bank,
+//                         as: "banks",
+//                         attributes: ["id", "accountNo", "acHolderName", "branchName", "IFSCode"],
+//                     },
+//                 ],
+//             },
+//             {
+//                 model: db.models.Party,
+//                 attributes: ["id", "partyName", "partyPhone"],
+//             },
+//             {
+//                 model: db.models.Truck,
+//                 attributes: ["id", "truckNo", "driverName", "driverPhone"],
+//             },
+//             {
+//                 model: db.models.PartyPayments,
+//                 as: "partyPayments",
+//             },
+//             {
+//                 model: db.models.TruckPayments,
+//                 as: "truckPayments",
+//             },
+//             {
+//                 model: db.models.Commission,
+//                 as: "commissions",
+//             },
+//             {
+//                 model: db.models.User,
+//                 as: "updatedByUser",
+//                 attributes: ["id", "fullName", "email"],
+//             },
+//         ],
+//     });
+
+//     if (!booking) {
+//         throw new Error("Booking not found");
+//     }
+
+//     return booking;
+// };
 
 exports.getBookingById = async (id) => {
     const booking = await db.models.Booking.findByPk(id, {
@@ -464,30 +568,66 @@ exports.getBookingById = async (id) => {
                     {
                         model: db.models.Bank,
                         as: "banks",
-                        attributes: ["id", "accountNo", "acHolderName", "branchName", "IFSCode"],
+                        attributes: [
+                            "id",
+                            "accountNo",
+                            "acHolderName",
+                            "branchName",
+                            "IFSCode",
+                        ],
                     },
                 ],
             },
             {
                 model: db.models.Party,
+                as: 'party',
                 attributes: ["id", "partyName", "partyPhone"],
             },
             {
                 model: db.models.Truck,
+                as: 'truck',
                 attributes: ["id", "truckNo", "driverName", "driverPhone"],
             },
+
+            /* ✅ PARTY PAYMENTS */
             {
                 model: db.models.PartyPayments,
                 as: "partyPayments",
             },
+
+            /* ✅ TRUCK PAYMENTS (FREIGHT + HALTING) */
             {
                 model: db.models.TruckPayments,
                 as: "truckPayments",
+                // attributes: [
+                //     "id",
+                //     "amount",
+                //     "paymentMode",
+                //     "paymentDate",
+                //     "paymentFor", // 👈 freight | halting
+                //     "remarks",
+                // ],
             },
+
+            /* ✅ HALTING MASTER (NO PAYMENT TABLE) */
+            {
+                model: db.models.BookingHalting,
+                as: "haltings",
+                attributes: [
+                    "id",
+                    "haltingDate",
+                    "days",
+                    "pricePerDay",
+                    "amount",
+                    "reason",
+                ],
+            },
+
             {
                 model: db.models.Commission,
                 as: "commissions",
             },
+
             {
                 model: db.models.User,
                 as: "updatedByUser",
@@ -502,7 +642,6 @@ exports.getBookingById = async (id) => {
 
     return booking;
 };
-
 
 
 // exports.updateFullBooking = async (bookingId, payload, userId) => {
@@ -647,6 +786,7 @@ exports.updateFullBooking = async (bookingId, payload, userId) => {
             rate: payload.rate,
             truckRate: payload.truckRate,
             weight: payload.weight,
+            unloadingWeight: payload.unloadingWeight,
             weightType: payload.weightType,
             partyFreight: payload.partyFreight,
             truckFreight: payload.truckFreight,
@@ -690,8 +830,11 @@ exports.updateFullBooking = async (bookingId, payload, userId) => {
                 utrNo: payload.truckUtrNo || null,
                 paymentType: "Debit",
                 paymentFor: "freight",
-                truckPanNumber: payload.truckPanNumber || null,
+                PanNumber: payload.truckPanNumber || null,
                 remark: "Freight Advance",
+                bankAcHolderName: payload.bankAcHolderName || null,
+                bankName: payload.truckBankName || null,
+                ifscCode: payload.truckIfscCode || null,
             }, { transaction: t });
         }
 
@@ -748,9 +891,118 @@ exports.updateFullBooking = async (bookingId, payload, userId) => {
             }
         }
 
+        let driverId = payload.driverId || null;
+
+        if (!driverId && payload.driverPhone) {
+
+            const existingDriver = await db.models.Driver.findOne({
+                where: { phone: payload.driverPhone },
+                transaction: t
+            });
+
+            if (existingDriver) {
+                driverId = existingDriver.id;
+            } else {
+
+                const newDriver = await db.models.Driver.create({
+                    driverName: payload.driverName,
+                    phone: payload.driverPhone,
+                    licenseNumber: payload.licenseNumber,
+                    licenseExpiry: payload.licenseExpiry
+                }, { transaction: t });
+
+                driverId = newDriver.id;
+            }
+        }
+
+        /* ===================== 8️⃣ TRIP ASSIGNMENT UPDATE ===================== */
+
+        const assignment = await db.models.TripAssignment.findOne({
+            where: { bookingId: bookingId },
+            transaction: t
+        });
+
+        if (assignment) {
+
+            await assignment.update({
+
+                truckId: truck.id,
+                driverId: driverId,
+
+                driverName: payload.driverName || null,
+                driverPhone: payload.driverPhone || null,
+                licenseNumber: payload.licenseNumber || null,
+                licenseExpiry: payload.licenseExpiry || null,
+
+            }, { transaction: t });
+
+        } else {
+
+            await db.models.TripAssignment.create({
+
+                bookingId: bookingId,
+                truckId: truck.id,
+                driverId: driverId,
+
+                driverName: payload.driverName || null,
+                driverPhone: payload.driverPhone || null,
+                licenseNumber: payload.licenseNumber || null,
+                licenseExpiry: payload.licenseExpiry || null,
+
+            }, { transaction: t });
+
+        }
+
+        await db.models.Truck.update(
+            { status: 'OnTrip' },
+            { where: { id: truck.id }, transaction: t }
+        );
+
         return booking;
     });
 };
+
+
+// exports.softDeleteBooking = async (bookingId, userId) => {
+//     return sequelize.transaction(async (t) => {
+
+//         const booking = await db.models.Booking.findOne({
+//             where: { id: bookingId, isDeleted: false },
+//             transaction: t,
+//         });
+
+//         if (!booking) {
+//             throw new Error("Booking not found or already deleted");
+//         }
+
+//         const deletePayload = {
+//             isDeleted: true,
+//             deletedAt: new Date(),
+//             deletedBy: userId,
+//         };
+
+//         // Soft delete booking
+//         await booking.update(deletePayload, { transaction: t });
+
+//         // Soft delete related records
+//         await db.models.PartyPayments.update(deletePayload, {
+//             where: { bookingId },
+//             transaction: t,
+//         });
+
+//         await db.models.TruckPayments.update(deletePayload, {
+//             where: { bookingId },
+//             transaction: t,
+//         });
+
+//         await db.models.Commission.update(deletePayload, {
+//             where: { bookingId },
+//             transaction: t,
+//         });
+
+//         return { message: "Booking soft deleted successfully" };
+//     });
+// };
 
 
 exports.softDeleteBooking = async (bookingId, userId) => {
@@ -789,6 +1041,31 @@ exports.softDeleteBooking = async (bookingId, userId) => {
             where: { bookingId },
             transaction: t,
         });
+
+        await db.models.BookingHalting.update(deletePayload, {
+            where: { bookingId },
+            transaction: t,
+        });
+
+        /* ===================== NEW PART ===================== */
+
+        // Get TripAssignment
+        const assignment = await db.models.TripAssignment.findOne({
+            where: { bookingId },
+            transaction: t
+        });
+
+        if (assignment) {
+
+            // Soft delete assignment
+            await assignment.update(deletePayload, { transaction: t });
+
+            // Make Truck Active Again
+            await db.models.Truck.update(
+                { status: 'Active' },
+                { where: { id: assignment.truckId }, transaction: t }
+            );
+        }
 
         return { message: "Booking soft deleted successfully" };
     });

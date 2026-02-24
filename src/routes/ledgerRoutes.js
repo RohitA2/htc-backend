@@ -26,6 +26,10 @@ router.get("/party-list", ledgerController.getPartyListForLedger)
 
 
 
+router.post("/party-bulk-payment", ledgerController.createPartyBulkPayment)
+
+
+ 
 
 
 

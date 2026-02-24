@@ -42,6 +42,7 @@ exports.getBookingById = async (req, res) => {
         const booking = await bookingService.getBookingById(id);
 
         res.status(200).json({
+            success: true,
             message: "Booking fetched successfully",
             data: booking,
         });

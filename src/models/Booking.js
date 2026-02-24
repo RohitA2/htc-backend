@@ -38,6 +38,10 @@ const Booking = sequelize.define(
             type: DataTypes.FLOAT,
             allowNull: true,
         },
+        unloadingWeight: {
+            type: DataTypes.FLOAT,
+            allowNull: true,
+        },
 
         weightType: {
             type: DataTypes.STRING,
@@ -120,7 +124,7 @@ const Booking = sequelize.define(
         },
 
         status: {
-            type: DataTypes.ENUM("pending", "complete"),
+            type: DataTypes.ENUM("pending", "complete", "partial", "cancelled"),
             defaultValue: "pending",
         },
     },

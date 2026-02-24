@@ -21,4 +21,7 @@ router.post("/truck-partial-payment", vendorLedgerController.createTruckPartialP
 router.get("/truck-tally/:truckId", vendorLedgerController.getTruckTallyLedger);
 
 
+router.post("/truck-bulk-payment", vendorLedgerController.createTruckBulkPayment);
+
+
 module.exports = router;

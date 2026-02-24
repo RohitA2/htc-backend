@@ -1,6 +1,7 @@
 const db = require("../config/database");
 const myServices = require("../services/myServices");
 const { Op } = require("sequelize");
+const { sequelize } = require("../config/database");
 
 exports.getAllPartyLedgerSummary = async (req, res) => {
     try {
@@ -515,6 +516,194 @@ exports.getPartyListForLedger = async (req, res) => {
         });
     }
 };
+
+
+exports.createPartyBulkPayment = async (req, res) => {
+    const {
+        partyId,
+        amount,
+        paymentMode,
+        paymentDate,
+        bankAccountNo,
+        utrNo,
+        remark,
+    } = req.body;
+
+    if (!partyId || !amount || amount <= 0) {
+        return res.status(400).json({
+            success: false,
+            message: "partyId and valid amount are required",
+        });
+    }
+
+    const t = await sequelize.transaction();
+
+    try {
+        let remainingAmount = Number(amount);
+
+        const bookings = await db.models.Booking.findAll({
+            where: {
+                partyId,
+                isDeleted: false,
+            },
+            order: [["date", "ASC"]],
+            transaction: t,
+        });
+
+        if (!bookings.length) {
+            throw new Error("No bookings found for this party");
+        }
+
+        const settlements = [];
+
+        for (const booking of bookings) {
+            if (remainingAmount <= 0) break;
+
+            const payments = await db.models.PartyPayments.findAll({
+                where: {
+                    bookingId: booking.id,
+                    isDeleted: false,
+                },
+                transaction: t,
+            });
+
+            const paidSoFar = payments.reduce(
+                (sum, p) => sum + Number(p.amount),
+                0
+            );
+
+            const bookingBalance =
+                Number(booking.partyFreight) - paidSoFar;
+
+            if (bookingBalance <= 0) continue;
+
+            const payNow = Math.min(bookingBalance, remainingAmount);
+
+            await db.models.PartyPayments.create(
+                {
+                    bookingId: booking.id,
+                    partyId,
+                    amount: payNow,
+                    paymentMode,
+                    paymentDate,
+                    bankAccountNo: paymentMode === "bank" ? bankAccountNo : null,
+                    utrNo: paymentMode === "bank" ? utrNo : null,
+                    paymentType: "Credit",
+                    remark: remark || "Bulk Payment",
+                },
+                { transaction: t }
+            );
+
+            const balanceAfter = bookingBalance - payNow;
+
+            /* ================= UPDATE STATUS ================= */
+            if (balanceAfter === 0) {
+                await booking.update(
+                    { status: "complete" },
+                    { transaction: t }
+                );
+            } else {
+                await booking.update(
+                    { status: "partial" },
+                    { transaction: t }
+                );
+            }
+
+            settlements.push({
+                bookingId: booking.id,
+                paidNow: payNow,
+                balanceAfter,
+                status:
+                    balanceAfter === 0 ? "Completed" : "Partial",
+            });
+
+            remainingAmount -= payNow;
+        }
+
+        await t.commit();
+
+        res.json({
+            success: true,
+            message: "Bulk payment adjusted successfully",
+            totalPaid: amount - remainingAmount,
+            unadjustedAmount: remainingAmount,
+            settlements,
+        });
+    } catch (error) {
+        await t.rollback();
+        res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+
+exports.reversePartyBulkPayment = async (req, res) => {
+    const { paymentIds } = req.body;
+
+    if (!paymentIds || !paymentIds.length) {
+        return res.status(400).json({
+            success: false,
+            message: "paymentIds required",
+        });
+    }
+
+    const t = await sequelize.transaction();
+
+    try {
+        const payments = await db.models.PartyPayments.findAll({
+            where: { id: paymentIds },
+            transaction: t,
+        });
+
+        for (const payment of payments) {
+            const booking = await db.models.Booking.findByPk(
+                payment.bookingId,
+                { transaction: t }
+            );
+
+            await payment.destroy({ transaction: t });
+
+            // Recalculate balance
+            const remainingPayments =
+                await db.models.PartyPayments.sum("amount", {
+                    where: { bookingId: booking.id },
+                    transaction: t,
+                });
+
+            const balance =
+                Number(booking.partyFreight) -
+                Number(remainingPayments || 0);
+
+            await booking.update(
+                {
+                    paymentStatus:
+                        balance <= 0
+                            ? "Completed"
+                            : remainingPayments > 0
+                                ? "Partial"
+                                : "Pending",
+                },
+                { transaction: t }
+            );
+        }
+
+        await t.commit();
+
+        res.json({
+            success: true,
+            message: "Bulk payment reversed successfully",
+        });
+    } catch (error) {
+        await t.rollback();
+        res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
 
 
 

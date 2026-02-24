@@ -18,8 +18,23 @@ const Truck = sequelize.define("Truck", {
   driverPhone: DataTypes.STRING,
   transporterName: DataTypes.STRING,
   transporterPhone: DataTypes.STRING,
+  vehicleType: DataTypes.STRING,
+  capacity: DataTypes.FLOAT,
+
+  rcNumber: DataTypes.STRING,
+  rcExpiry: DataTypes.DATE,
+
+  insuranceNumber: DataTypes.STRING,
+  insuranceExpiry: DataTypes.DATE,
+
+  permitExpiry: DataTypes.DATE,
+  fitnessExpiry: DataTypes.DATE,
+  pucExpiry: DataTypes.DATE,
+
+  ownerName: DataTypes.STRING,
+  ownerContact: DataTypes.STRING,
   status: {
-    type: DataTypes.ENUM("Active", "Inactive"),
+    type: DataTypes.ENUM("Active", "Inactive", "OnTrip"),
     defaultValue: "Active",
   },
 }, {

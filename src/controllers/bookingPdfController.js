@@ -19,7 +19,7 @@ class BookingPdfController {
             if (!booking) {
                 return res.status(404).json({ message: 'Booking not found' });
             }
-            console.log(booking);
+            // console.log(booking);
             const company = booking.company || {};
             const party = booking.party || {};
             const truck = booking.truck || {};
@@ -87,7 +87,7 @@ class BookingPdfController {
             if (!booking) {
                 return res.status(404).json({ message: 'Booking not found' });
             }
-            console.log(booking);
+            // console.log(booking);
 
             const pdfData = {
                 BookingNo: booking.id,
@@ -106,7 +106,7 @@ class BookingPdfController {
                 bookedBy: booking.updatedByUser?.fullName || 'client',
                 mobileNumber: booking.party?.partyPhone || '', // for header
             };
-            console.log(pdfData);
+            // console.log(pdfData);
 
             const pdfBuffer = await pdfService.generateBookingSlip(pdfData);
 
@@ -153,7 +153,7 @@ class BookingPdfController {
             if (!booking) {
                 return res.status(404).json({ message: 'Booking not found' });
             }
-            console.log("i am from testing ", booking.id)
+            // console.log("i am from testing ", booking.id)
             // Get party payments to calculate advance
             const partyPayments = await db.models.PartyPayments.findAll({
                 where: { bookingId: booking.id },
@@ -209,7 +209,7 @@ class BookingPdfController {
     }
 
     async getBiltyByBookingId(req, res) {
-        console.log("i am from testing ", req.params);
+        // console.log("i am from testing ", req.params);
 
         try {
             const { bookingId } = req.params;

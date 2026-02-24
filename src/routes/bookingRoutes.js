@@ -7,7 +7,7 @@ router.post("/create", authMiddleware, bookingController.createBooking);
 
 router.get("/pagination", authMiddleware, bookingController.getBookings);
 
-router.get("/one/:id", authMiddleware, bookingController.getBookingById);
+router.get("/one/:id", bookingController.getBookingById);
 
 router.put("/update/:id", authMiddleware, bookingController.updateBooking);
 

@@ -55,56 +55,56 @@ exports.getAllCompanies = async (req, res) => {
  * Paginated Companies
  */
 exports.getCompaniesPagination = async (req, res) => {
-  try {
-    const {
-      page = 1,
-      limit = 10,
-      status,
-      search,
-      startDate,
-      endDate,
-    } = req.query;
+    try {
+        const {
+            page = 1,
+            limit = 10,
+            status,
+            search,
+            startDate,
+            endDate,
+        } = req.query;
 
-    const where = {};
+        const where = {};
 
-    // ✅ Status filter
-    if (status) {
-      where.status = status;
+        // ✅ Status filter
+        if (status) {
+            where.status = status;
+        }
+
+        // ✅ Search filter (companyName, email, GST, person, phone)
+        if (search) {
+            where[Op.or] = [
+                { companyName: { [Op.iLike]: `%${search}%` } },
+                { companyEmail: { [Op.iLike]: `%${search}%` } },
+                { gstNo: { [Op.iLike]: `%${search}%` } },
+                { personName: { [Op.iLike]: `%${search}%` } },
+                { phoneNumber: { [Op.iLike]: `%${search}%` } },
+            ];
+        }
+
+        // ✅ Date range filter (createdAt)
+        if (startDate && endDate) {
+            where.createdAt = {
+                [Op.between]: [new Date(startDate), new Date(endDate)],
+            };
+        }
+
+        const response = await myServices.listPagination(
+            db.models.Company,
+            null,
+            parseInt(page),
+            parseInt(limit),
+            where
+        );
+
+        return res.status(200).json(response);
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+        });
     }
-
-    // ✅ Search filter (companyName, email, GST, person, phone)
-    if (search) {
-      where[Op.or] = [
-        { companyName: { [Op.iLike]: `%${search}%` } },
-        { companyEmail: { [Op.iLike]: `%${search}%` } },
-        { gstNo: { [Op.iLike]: `%${search}%` } },
-        { personName: { [Op.iLike]: `%${search}%` } },
-        { phoneNumber: { [Op.iLike]: `%${search}%` } },
-      ];
-    }
-
-    // ✅ Date range filter (createdAt)
-    if (startDate && endDate) {
-      where.createdAt = {
-        [Op.between]: [new Date(startDate), new Date(endDate)],
-      };
-    }
-
-    const response = await myServices.listPagination(
-      db.models.Company,
-      null,
-      parseInt(page),
-      parseInt(limit),
-      where
-    );
-
-    return res.status(200).json(response);
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
 };
 
 /**

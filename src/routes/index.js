@@ -13,6 +13,8 @@ const ledgerRoutes = require("./ledgerRoutes")
 const vendorLedgerRoutes = require("./vendorLedgerRoutes")
 const accountingRoutes = require("./accountingRoutes")
 const commissionRoutes = require("./commissionRoutes")
+const haltingRoutes = require("./haltingRoutes")
+const tripRoutes = require('./tripAssignment.routes')
 
 
 module.exports = (app) => {
@@ -32,6 +34,9 @@ module.exports = (app) => {
   app.use("/api/vendor", vendorLedgerRoutes)
   app.use("/api/accounting", accountingRoutes)
   app.use("/api/commission", commissionRoutes)
+  app.use('/api/haltings', haltingRoutes)
+
+  app.use('/api/trip-assign', tripRoutes);
 
 
 

@@ -52,6 +52,10 @@ const TruckPayments = sequelize.define('TruckPayments', {
         type: DataTypes.STRING,
         allowNull: true
     },
+    bankAcHolderName:{
+        type: DataTypes.STRING,
+        allowNull: true
+    },
     paymentFor: {
         type: DataTypes.ENUM("freight", "halting"),
         defaultValue: "freight",

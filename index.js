@@ -12,7 +12,7 @@ const app = express();
 const server = http.createServer(app);
 
 
-app.use(cors( { origin: 'http://localhost:5173' } ));
+app.use(cors({ origin: 'http://localhost:5173' }));
 
 // app.use(express.static("public"));
 app.use('/uploads', express.static(path.join(__dirname, 'src', 'uploads')));
@@ -25,6 +25,9 @@ app.use(express.json());
 dotenv.config();
 defineAssociations();
 setupRoutes(app);
+require('./src/utils/vehicleExpiryChecker');
+require('./src/utils/driverExpiryChecker');
+require('./src/utils/tempDriverExpiryChecker');
 
 // Basic Route
 app.get('/', (req, res) => {

@@ -45,6 +45,6 @@ router.put(
 /**
  * DELETE CHALLAN (soft delete recommended)
  */
-router.delete("/:id", challanController.deleteChallan);
+router.delete("/soft-delete/:id", challanController.deleteChallan);
 
 module.exports = router;

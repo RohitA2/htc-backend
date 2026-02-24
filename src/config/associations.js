@@ -89,25 +89,64 @@ const defineAssociations = () => {
 
   /* ================= TRUCK ↔ TRUCK PAYMENTS ================= */
 
-models.Truck.hasMany(models.TruckPayments, {
-  foreignKey: "truckId",
-  as: "truckPayments",
-});
+  models.Truck.hasMany(models.TruckPayments, {
+    foreignKey: "truckId",
+    as: "truckPayments",
+  });
 
-models.TruckPayments.belongsTo(models.Truck, {
-  foreignKey: "truckId",
-  as: "truck",
-});
-
-
-
-models.Booking.hasMany(models.BookingHalting, { foreignKey: "bookingId", as: "haltings" });
-models.BookingHalting.belongsTo(models.Booking, { foreignKey: "bookingId", as: "booking" });
-
-models.Truck.hasMany(models.BookingHalting, { foreignKey: "truckId", as: "haltings" });
-models.BookingHalting.belongsTo(models.Truck, { foreignKey: "truckId", as: "truck" });
+  models.TruckPayments.belongsTo(models.Truck, {
+    foreignKey: "truckId",
+    as: "truck",
+  });
 
 
+
+  models.Booking.hasMany(models.BookingHalting, { foreignKey: "bookingId", as: "haltings" });
+  models.BookingHalting.belongsTo(models.Booking, { foreignKey: "bookingId", as: "booking" });
+
+  models.Truck.hasMany(models.BookingHalting, { foreignKey: "truckId", as: "haltings" });
+  models.BookingHalting.belongsTo(models.Truck, { foreignKey: "truckId", as: "truck" });
+
+
+
+  //Vehicle and VehicleNotification  Association
+  models.Truck.hasMany(models.VehicleNotification, {
+    foreignKey: 'truckId',
+    as: 'truckNotifications'
+  });
+
+  models.VehicleNotification.belongsTo(models.Truck, {
+    foreignKey: 'truckId'
+  });
+
+
+  //Trip, Booking , Vehicle , Driver Association
+  models.Booking.hasOne(models.TripAssignment, {
+    foreignKey: 'bookingId',
+    as: 'tripAssignment'
+  });
+
+  models.TripAssignment.belongsTo(models.Booking, {
+    foreignKey: 'bookingId'
+  });
+
+  models.Truck.hasMany(models.TripAssignment, {
+    foreignKey: 'truckId',
+    as: 'assignments'
+  });
+
+  models.TripAssignment.belongsTo(models.Truck, {
+    foreignKey: 'truckId'
+  });
+
+  models.Driver.hasMany(models.TripAssignment, {
+    foreignKey: 'driverId',
+    as: 'driverTrips'
+  });
+
+  models.TripAssignment.belongsTo(models.Driver, {
+    foreignKey: 'driverId'
+  });
 
 };
 
